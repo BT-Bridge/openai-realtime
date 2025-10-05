@@ -181,5 +181,6 @@ func main() {
 	session := loadSessionConfig(logger)
 	_ = apiKey
 	_ = session
+	
 
 }

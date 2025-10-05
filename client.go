@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bt-bridge/openai-realtime/shared"
-	"github.com/bytedance/sonic"
 	"github.com/openai/openai-go/v3/realtime"
 	"github.com/pion/webrtc/v4"
 	"github.com/valyala/fasthttp"
@@ -21,7 +20,7 @@ import (
 type TrackRemoteHandler func(track *webrtc.TrackRemote)
 type TrackLocalHandler func(track *webrtc.TrackLocalStaticSample)
 
-type EventHandler func(event *Event, state *SessionState)
+type EventHandler func(event *Event)
 
 type Client struct {
 	logger  shared.LoggerAdapter
@@ -34,7 +33,6 @@ type Client struct {
 	dc      *webrtc.DataChannel
 	running bool
 
-	state    *SessionState
 	audioL   *webrtc.TrackLocalStaticSample
 	audioTLH TrackLocalHandler  // track.Kind() == webrtc.RTPCodecTypeAudio
 	audioTRH TrackRemoteHandler // track.Kind() == webrtc.RTPCodecTypeAudio
@@ -65,7 +63,6 @@ func NewClient(logger shared.LoggerAdapter, apikey string, baseUrl ...string) (c
 		logger:  logger,
 		baseUrl: baseUrl_,
 		apiKey:  apikey,
-		state:   NewSessionState(),
 	}
 
 	// Creating a new WebRTC API object
@@ -169,20 +166,22 @@ func (c *Client) RegisterEventHandler(handler EventHandler) error {
 			c.logger.Warn("received non-string message on data channel")
 			return
 		}
-		var event *Event
-		if err := sonic.Unmarshal(msg.Data, event); err != nil {
-			c.logger.Warn(
+		event := new(Event)
+		if err := event.UnmarshalJSON(msg.Data); err != nil {
+			c.logger.Error(
 				"can not unmarshal event",
+				err,
 				zap.ByteString("data", msg.Data),
 			)
 			return
 		}
-		if !KnownEventTypes.Contains(event.Type) {
-			c.logger.Warn("unknown event type", zap.String("type", string(event.Type)))
-			return
-		}
-		c.logger.Info("received event", zap.String("type", string(event.Type)))
-		c.eh(event, c.state)
+		c.logger.Info(
+			"received event",
+			zap.String("type", string(event.Type)),
+			zap.String("event_id", event.EventId),
+			zap.Any("param", event.Param),
+		)
+		c.eh(event)
 	})
 	return nil
 }
