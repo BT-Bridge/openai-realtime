@@ -65,6 +65,14 @@ const (
 	sessionMaxOutputTokens int64  = 1024
 )
 
+// Realtime Client Config
+const (
+	// Opus Encoded Audio Input
+	realtimeInputChannels int = 1     // mono
+	realtimeInputRate     int = 48000 // 48 kHz
+	realtimeInputFrameMs  int = 20    // 20 ms
+)
+
 func loadApiKey(logger shared.LoggerAdapter) string {
 	apiKey, err := shared.Getenv(shared.GetenvString, envKeyApiKey, false, "")
 	if err != nil {
@@ -173,4 +181,5 @@ func main() {
 	session := loadSessionConfig(logger)
 	_ = apiKey
 	_ = session
+
 }
