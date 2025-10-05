@@ -8,6 +8,7 @@ import (
 
 type LoggerAdapter interface {
 	Error(msg string, err error, fields ...zap.Field)
+	Warn(msg string, fields ...zap.Field)
 	Info(msg string, fields ...zap.Field)
 	Debug(msg string, fields ...zap.Field)
 	Trace(msg string, fields ...zap.Field)
@@ -22,6 +23,10 @@ var _ LoggerAdapter = (*stdLogger)(nil)
 
 func (s *stdLogger) Error(msg string, err error, fields ...zap.Field) {
 	s.logger.Error(msg, append(fields, zap.Error(err))...)
+}
+
+func (s *stdLogger) Warn(msg string, fields ...zap.Field) {
+	s.logger.Warn(msg, fields...)
 }
 
 func (s *stdLogger) Info(msg string, fields ...zap.Field) {
@@ -56,6 +61,10 @@ var _ LoggerAdapter = (*fileLogger)(nil)
 
 func (f *fileLogger) Error(msg string, err error, fields ...zap.Field) {
 	f.logger.Error(msg, append(fields, zap.Error(err))...)
+}
+
+func (f *fileLogger) Warn(msg string, fields ...zap.Field) {
+	f.logger.Warn(msg, fields...)
 }
 
 func (f *fileLogger) Info(msg string, fields ...zap.Field) {
