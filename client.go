@@ -39,7 +39,7 @@ type Client struct {
 	eh       EventHandler
 }
 
-func NewClient(logger shared.LoggerAdapter, apikey string, baseUrl ...string) (c *Client, err error) {
+func NewClient(logger shared.LoggerAdapter, apikey string, baseUrl string) (c *Client, err error) {
 	if logger == nil {
 		return nil, shared.ErrNoLogger
 	}
@@ -47,8 +47,8 @@ func NewClient(logger shared.LoggerAdapter, apikey string, baseUrl ...string) (c
 		return nil, shared.ErrNoAPIKey
 	}
 	var baseUrl_ *url.URL
-	if len(baseUrl) > 0 && baseUrl[0] != "" {
-		baseUrl_, err = url.Parse(baseUrl[0])
+	if baseUrl != "" {
+		baseUrl_, err = url.Parse(baseUrl)
 		if err != nil {
 			return nil, fmt.Errorf("parsing base URL: %w", err)
 		}

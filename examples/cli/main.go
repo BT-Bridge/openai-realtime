@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
+	"github.com/bt-bridge/openai-realtime/agents"
 	"github.com/bt-bridge/openai-realtime/shared"
 	"github.com/bytedance/sonic"
 	"github.com/goccy/go-yaml"
@@ -25,6 +28,13 @@ const (
 	logFileMaxBackups int    = 2            // keep 2 backups
 	logFileMaxAge     int    = 3            // max age 3 days
 	logFileCompress   bool   = false        // no compression
+)
+
+// Agent configuration
+const (
+	agentPrinterFileAddress  string = "cli/cli.output"
+	agentPrinterIndentString string = "│  "
+	agentPrinterIndent       int    = 1
 )
 
 // Session Config (4 October 2025)
@@ -73,34 +83,7 @@ const (
 	realtimeInputFrameMs  int = 20    // 20 ms
 )
 
-func loadApiKey(logger shared.LoggerAdapter) string {
-	apiKey, err := shared.Getenv(shared.GetenvString, envKeyApiKey, false, "")
-	if err != nil {
-		logger.Error("OPENAI_API_KEY environment variable", err)
-		os.Exit(1)
-	}
-	if apiKey == "" {
-		fmt.Print("Enter your OpenAI API key: ")
-		var input string
-		_, err := fmt.Scanln(&input)
-		if err != nil {
-			if err.Error() == "unexpected newline" {
-				logger.Error("no API key provided", nil)
-				os.Exit(1)
-			}
-			logger.Error("failed to read API key from stdin", err)
-			os.Exit(1)
-		}
-		apiKey = input
-	}
-	logger.Info(
-		"using OpenAI API key",
-		zap.String("apiKey", apiKey[:10]+"..."),
-	)
-	return apiKey
-}
-
-func loadSessionConfig(logger shared.LoggerAdapter) []byte {
+func loadSessionConfig(logger shared.LoggerAdapter) *realtime.RealtimeSessionCreateRequestParam {
 	cfg := realtime.RealtimeSessionCreateRequestParam{
 		Instructions: param.NewOpt(sessionInstructions),
 		Model:        sessionModel,
@@ -158,15 +141,9 @@ func loadSessionConfig(logger shared.LoggerAdapter) []byte {
 		logger.Error("failed to marshal session config to yaml", err)
 		os.Exit(1)
 	}
-	boldPrintln("📋 Session Config")
+	fmt.Println("📋 Session Config")
 	fmt.Println("\n├─  " + strings.ReplaceAll(string(yamlBytes), "\n", "\n│   ") + "\n")
-	return bytes
-}
-
-func boldPrintln(a ...any) {
-	fmt.Print("\033[1m")
-	fmt.Println(a...)
-	fmt.Print("\033[0m")
+	return &cfg
 }
 
 func main() {
@@ -177,10 +154,131 @@ func main() {
 		zap.String("component", "cli"),
 		zap.String("version", shared.Version),
 	)
-	apiKey := loadApiKey(logger)
-	session := loadSessionConfig(logger)
-	_ = apiKey
-	_ = session
-	
 
+	// Loading API Key
+	apiKey, err := shared.Getenv(shared.GetenvString, envKeyApiKey, false, "")
+	if err != nil {
+		logger.Error("OPENAI_API_KEY environment variable", err)
+		os.Exit(1)
+	}
+	if apiKey == "" {
+		fmt.Print("Enter your OpenAI API key: ")
+		var input string
+		_, err := fmt.Scanln(&input)
+		if err != nil {
+			if err.Error() == "unexpected newline" {
+				logger.Error("no API key provided", nil)
+				os.Exit(1)
+			}
+			logger.Error("failed to read API key from stdin", err)
+			os.Exit(1)
+		}
+		apiKey = input
+	}
+	logger.Info(
+		"using OpenAI API key",
+		zap.String("apiKey", apiKey[:10]+"..."),
+	)
+
+	// Making Session Config
+	session := &realtime.RealtimeSessionCreateRequestParam{
+		Instructions: param.NewOpt(sessionInstructions),
+		Model:        sessionModel,
+		Audio: realtime.RealtimeAudioConfigParam{
+			Input: realtime.RealtimeAudioConfigInputParam{
+				TurnDetection: realtime.RealtimeAudioInputTurnDetectionUnionParam{
+					OfSemanticVad: &realtime.RealtimeAudioInputTurnDetectionSemanticVadParam{
+						CreateResponse:    param.NewOpt(true),
+						InterruptResponse: param.NewOpt(true),
+						Eagerness:         sessionVADEagerness,
+					},
+				},
+				Format: realtime.RealtimeAudioFormatsUnionParam{
+					OfAudioPCM: &realtime.RealtimeAudioFormatsAudioPCMParam{
+						Rate: 24000,
+						Type: "audio/pcm",
+					},
+				},
+				NoiseReduction: realtime.RealtimeAudioConfigInputNoiseReductionParam{
+					Type: realtime.NoiseReductionType(sessionNoiseReduction),
+				},
+				Transcription: realtime.AudioTranscriptionParam{
+					Language: param.NewOpt(sessionInputLanguage),
+					Prompt:   param.NewOpt(sessionInputTranscriptionPrompt),
+					Model:    realtime.AudioTranscriptionModel(sessionInputTranscriptionModel),
+				},
+			},
+			Output: realtime.RealtimeAudioConfigOutputParam{
+				Speed: param.NewOpt(sessionOutputSpeed),
+				Format: realtime.RealtimeAudioFormatsUnionParam{
+					OfAudioPCM: &realtime.RealtimeAudioFormatsAudioPCMParam{
+						Rate: 24000,
+						Type: "audio/pcm",
+					},
+				},
+				Voice: realtime.RealtimeAudioConfigOutputVoice(sessionOutputVoice),
+			},
+		},
+		MaxOutputTokens: realtime.RealtimeSessionCreateRequestMaxOutputTokensUnionParam{
+			OfInt: param.NewOpt(sessionMaxOutputTokens),
+		},
+	}
+
+	// Loading Base URL
+	baseUrl := shared.MustGetenv(
+		shared.GetenvString,
+		"OPENAI_BASE_URL",
+		false,
+		"https://api.openai.com/v1",
+	)
+
+	// Making Printer Hooks
+	stdoutHook := shared.NewWriteCloser(os.Stdout)
+	if stdoutHook == nil {
+		logger.Error("creating stdout hook", nil)
+		os.Exit(1)
+	}
+	file, err := os.OpenFile(agentPrinterFileAddress, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		logger.Error("opening/creating agent output file", err)
+		os.Exit(1)
+	}
+	fileHook := shared.NewWriteCloser(file)
+	printer, err := shared.NewPrinter(agentPrinterIndentString, stdoutHook, fileHook)
+	if err != nil {
+		logger.Error("creating printer", err)
+		os.Exit(1)
+	}
+
+	// Spawning CLI Agent
+	agent := new(agents.CLIAgent)
+	doneSignal, err := agent.Spawn(logger, apiKey, session, printer, baseUrl)
+	if err != nil {
+		logger.Error("spawning CLI agent", err)
+		os.Exit(1)
+	}
+
+	// Waiting for graceful shutdown or session end
+	sig := make(chan os.Signal, 1)
+	defer close(sig)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-doneSignal:
+		logger.Info("session ended")
+		return
+	case <-sig:
+		logger.Info("shutting down...")
+		if err = agent.Close(); err != nil {
+			logger.Error("closing CLI agent", err)
+			os.Exit(1)
+		}
+		select {
+		case <-doneSignal:
+			logger.Info("graceful shutdown complete")
+			return
+		case <-sig:
+			logger.Info("forcing shutdown")
+			return
+		}
+	}
 }
