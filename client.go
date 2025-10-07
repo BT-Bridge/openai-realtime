@@ -91,7 +91,6 @@ func (c *Client) State() webrtc.PeerConnectionState {
 }
 
 func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, baseUrl string) (c *Client, err error) {
-	ctx, cancel := context.WithCancelCause(ctx)
 	if logger == nil {
 		return nil, shared.ErrNoLogger
 	}
@@ -111,10 +110,13 @@ func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, baseUrl
 			Path:   "/v1",
 		}
 	}
+	ctx, cancel := context.WithCancelCause(ctx)
 	c = &Client{
 		logger:  logger,
 		baseUrl: baseUrl_,
 		apiKey:  apikey,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 
 	// Creating a new WebRTC API object
@@ -182,8 +184,6 @@ func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, baseUrl
 		return nil, fmt.Errorf("creating data channel: %w", err)
 	}
 
-	c.ctx = ctx
-	c.cancel = cancel
 	if err := c.respectCtx(); err != nil {
 		return nil, fmt.Errorf("respecting client context: %w", err)
 	}

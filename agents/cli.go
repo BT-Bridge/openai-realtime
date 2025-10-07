@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	pkg "github.com/bt-bridge/openai-realtime"
 	"github.com/bt-bridge/openai-realtime/shared"
+	"github.com/bt-bridge/openai-realtime/tools"
 	"github.com/goccy/go-yaml"
 	"github.com/openai/openai-go/v3/realtime"
 	"github.com/pion/mediadevices"
 	"github.com/pion/mediadevices/pkg/codec/opus"
 	_ "github.com/pion/mediadevices/pkg/driver/microphone"
 	"github.com/pion/mediadevices/pkg/prop"
+	"github.com/pion/webrtc/v4"
+	"go.uber.org/zap"
 )
 
 type CLIState struct {
@@ -95,7 +99,7 @@ func (a *CLIAgent) Spawn(
 		return nil, err
 	}
 	// Getting microphone access and stream
-	if err := a.printer.Writeln("\n\n🎤 Accessing microphone...\n", 0); err != nil {
+	if err := a.printer.Writeln("\n\n🎤 Accessing microphone...", 0); err != nil {
 		a.logger.Error("printing microphone access message", err)
 	}
 	opusParams, err := opus.NewParams()
@@ -134,7 +138,48 @@ func (a *CLIAgent) Spawn(
 		a.logger.Error("printing microphone access success message", err)
 	}
 
-	return nil, nil // TODO
+	// Setting up track remote handler
+	// This will play the audio received from the session
+	// to the default audio output device (e.g., speakers or headphones)
+	if err := a.printer.Writeln("🔈 Setting up track remote handler...", 0); err != nil {
+		a.logger.Error("printing track remote handler setup message", err)
+	}
+	err = a.client.RegisterTrackRemoteHandler(func(track *webrtc.TrackRemote) {
+		a.logger.Info(
+			"received remote track",
+			zap.String("kind", track.Kind().String()),
+			zap.String("codec", track.Codec().MimeType),
+		)
+		tools.PlayRemoteAudio(ctx, a.logger, track, 100)
+	})
+	if err != nil {
+		a.logger.Error("registering track remote handler", err)
+		return nil, err
+	}
+	a.logger.Info("track remote handler registered successfully")
+	if err := a.printer.Writeln("✅ Track remote handler set up successfully.\n", 0); err != nil {
+		a.logger.Error("printing track remote handler setup success message", err)
+	}
+
+	// Setting up track local handler
+	// This will send the audio from the microphone to the session
+	if err := a.printer.Writeln("🎧 Setting up track local handler...", 0); err != nil {
+		a.logger.Error("printing track local handler setup message", err)
+	}
+	err = a.client.RegisterTrackLocalHandler(func(track *webrtc.TrackLocalStaticSample) {
+		tools.StreamLocalAudio(ctx, a.logger, track, a.micTrack, time.Duration(opusParams.Latency))
+	})
+	if err != nil {
+		a.logger.Error("registering track local handler", err)
+		return nil, err
+	}
+	a.logger.Info("track local handler registered successfully")
+	if err := a.printer.Writeln("✅ Track local handler set up successfully.\n", 0); err != nil {
+		a.logger.Error("printing track local handler setup success message", err)
+	}
+
+	select {}
+	// TODO
 }
 
 func (a *CLIAgent) Close() error {

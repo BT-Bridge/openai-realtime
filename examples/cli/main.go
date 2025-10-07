@@ -30,7 +30,6 @@ const (
 
 // Agent configuration
 const (
-	agentPrinterFileAddress  string = "cli/cli.output"
 	agentPrinterIndentString string = "│  "
 )
 
@@ -164,13 +163,7 @@ func main() {
 		logger.Error("creating stdout hook", nil)
 		os.Exit(1)
 	}
-	file, err := os.OpenFile(agentPrinterFileAddress, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		logger.Error("opening/creating agent output file", err)
-		os.Exit(1)
-	}
-	fileHook := shared.NewWriteCloser(file)
-	printer, err := shared.NewPrinter(agentPrinterIndentString, stdoutHook, fileHook)
+	printer, err := shared.NewPrinter(agentPrinterIndentString, stdoutHook)
 	if err != nil {
 		logger.Error("creating printer", err)
 		os.Exit(1)

@@ -1,7 +1,7 @@
 .PHONY: cli playground
 
 cli:
-	@$(MAKE) -C examples cmd EXAMPLE=cli
+	@$(MAKE) -C examples cmd EXAMPLE=cli | tee examples/cli/cli.output
 
 playground:
 	@$(MAKE) -C examples cmd EXAMPLE=playground
