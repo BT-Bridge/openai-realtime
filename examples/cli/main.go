@@ -67,7 +67,7 @@ const (
 	// / verse
 	// / marin
 	// / cedar
-	sessionOutputVoice     string = "cedar"
+	sessionOutputVoice     string = "marin"
 	sessionMaxOutputTokens int64  = 1024
 )
 

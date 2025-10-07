@@ -225,6 +225,7 @@ func (a *CLIAgent) Spawn(
 	if err := a.printer.Writeln("✅ Session started successfully.\n", 0); err != nil {
 		a.logger.Error("printing session started success message", err)
 	}
+	<-a.client.Connected()
 	return nil
 }
 

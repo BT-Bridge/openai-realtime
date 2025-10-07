@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/bt-bridge/openai-realtime/shared"
+	"github.com/bytedance/sonic"
 	"github.com/openai/openai-go/v3/realtime"
 	"github.com/pion/webrtc/v4"
 	"github.com/valyala/fasthttp"
@@ -74,6 +75,12 @@ func (c *Client) Close() error {
 	}
 	c.running = false
 	return nil
+}
+
+func (c *Client) DC() *webrtc.DataChannel {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.dc
 }
 
 func (c *Client) Done() <-chan struct{} {
@@ -154,6 +161,7 @@ func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, baseUrl
 			if !connectedGotClosed {
 				connectedGotClosed = true
 				close(connected)
+				go c.audioTLH(c.audioL)
 				return
 			}
 			c.logger.Warn("peer connection state is connected (More than once)")
@@ -280,7 +288,24 @@ func (c *Client) RegisterEventHandler(handler EventHandler) error {
 	}
 	c.eh = handler
 	c.dc.OnOpen(func() {
-		c.logger.Info("data channel opened")
+		fmt.Println("Data channel opened")
+		startMessage := map[string]any{
+			"type": "response.create",
+			"response": map[string]interface{}{
+				"instructions":      "Greet the user and introduce yourself as a Bussiness coach AI. Ask how you can assist them today.",
+				"max_output_tokens": 100,
+			},
+		}
+		smb, err := sonic.Marshal(startMessage)
+		if err != nil {
+			c.logger.Error("marshaling start message", err)
+			return
+		}
+		if err := c.dc.Send(smb); err != nil {
+			c.logger.Error("sending start message", err)
+			return
+		}
+		c.logger.Info("data channel opened and start message sent")
 	})
 	c.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		if !msg.IsString {
@@ -322,13 +347,6 @@ func (c *Client) Start() error {
 	if c.eh == nil {
 		return shared.ErrNoEventHandler
 	}
-	if c.audioTLH != nil && c.audioL == nil {
-		return errors.New("audio track local handler is set but audio track is nil")
-	}
-	if c.audioTRH != nil && c.audioL == nil {
-		return errors.New("audio track remote handler is set but audio track is nil")
-	}
-
 	offer, err := c.pc.CreateOffer(nil)
 	if err != nil {
 		c.cancel(fmt.Errorf("creating offer: %w", err))

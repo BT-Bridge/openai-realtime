@@ -1,3 +1,4 @@
+// tools/audio.go
 package tools
 
 import (
@@ -14,34 +15,39 @@ import (
 	"github.com/pion/mediadevices"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
+	"go.uber.org/zap"
 )
 
 type AudioBuffer struct {
 	buffer []byte
 	mu     sync.Mutex
 	cond   *sync.Cond
-	size   int
-	cap    int
+	size   int // current bytes in buffer
+	cap    int // max bytes the buffer can hold before dropping from head
 }
 
-func NewAudioBuffer(fixedCap int) *AudioBuffer {
+func NewAudioBuffer(capacityBytes int) *AudioBuffer {
+	if capacityBytes < 4096 {
+		capacityBytes = 4096
+	}
 	ab := &AudioBuffer{
-		buffer: make([]byte, 0, fixedCap),
+		buffer: make([]byte, 0, capacityBytes),
 		size:   0,
-		cap:    fixedCap,
+		cap:    capacityBytes,
 	}
 	ab.cond = sync.NewCond(&ab.mu)
 	return ab
 }
 
-func (ab *AudioBuffer) Write(data []byte) (dropped bool) {
+func (ab *AudioBuffer) Write(data []byte) (dropped int) {
 	ab.mu.Lock()
 	defer ab.mu.Unlock()
+
 	if ab.size+len(data) > ab.cap {
 		drop := ab.size + len(data) - ab.cap
 		ab.buffer = ab.buffer[drop:]
 		ab.size -= drop
-		dropped = true
+		dropped = drop
 	}
 	ab.buffer = append(ab.buffer, data...)
 	ab.size += len(data)
@@ -100,69 +106,109 @@ func StreamLocalAudio(ctx context.Context, logger shared.LoggerAdapter, track *w
 	}
 }
 
-func PlayRemoteAudio(ctx context.Context, logger shared.LoggerAdapter, track *webrtc.TrackRemote, bufferMs int) {
-	var (
-		codec      = track.Codec()
-		sampleRate = int(codec.ClockRate)
-		channels   = int(codec.Channels)
+func PlayRemoteAudio(ctx context.Context, logger shared.LoggerAdapter, track *webrtc.TrackRemote, otoBufferMs int) {
+	codec := track.Codec()
+	sampleRate := int(codec.ClockRate)
+	if sampleRate <= 0 {
+		sampleRate = 48000
+	}
+	channels := int(codec.Channels)
+	if channels <= 0 {
+		channels = 1
+	}
+	logger.Info("configuring remote audio",
+		zap.Int("sample_rate", sampleRate),
+		zap.Int("channels", channels),
 	)
+
+	// Opus decoder
 	decoder, err := opus.NewDecoder(sampleRate, channels)
 	if err != nil {
 		logger.Error("creating Opus decoder", err)
 		return
 	}
 
+	// Oto playback context
+	if otoBufferMs <= 0 {
+		otoBufferMs = 100
+	}
 	otoCtx, ready, err := oto.NewContext(
 		&oto.NewContextOptions{
 			SampleRate:   sampleRate,
 			ChannelCount: channels,
 			Format:       oto.FormatSignedInt16LE,
-			BufferSize:   time.Duration(bufferMs) * time.Millisecond,
+			BufferSize:   time.Duration(otoBufferMs) * time.Millisecond,
 		},
 	)
 	if err != nil {
 		fmt.Printf("Oto context failed: %v\n", err)
 		return
 	}
-	capBytes := int(float64(bufferMs)/1000*float64(sampleRate)) * channels * 2 // 16-bits
-	audioBuffer := NewAudioBuffer(capBytes)
-	maxFrameSamplesPerChannel := int(1.2 * float64(sampleRate)) // 120ms max frame size
-	pcm := make([]int16, maxFrameSamplesPerChannel*channels)
 	<-ready
-	otoCtx.NewPlayer(audioBuffer).Play()
+
+	// Large ring buffer (~5 seconds of audio) to avoid drops under bursty RTP
+	ringCapBytes := sampleRate * channels * 2 /*bytes*/ * 5 /*seconds*/
+	audioBuffer := NewAudioBuffer(ringCapBytes)
+	
+
+	// Pre-allocate PCM buffer for up to 120ms per Opus packet
+	// 120ms = sampleRate * 0.12 samples per channel
+	maxFrameSamplesPerChannel := max(int(0.12 * float64(sampleRate)), 960) // never below a typical 20ms @ 48k
+	pcm := make([]int16, maxFrameSamplesPerChannel*channels)
+
+	// Tiny jitter buffer to smooth bursts (store a couple of 20ms frames)
+	jitter := make([][]byte, 0, 5) // ~100ms capacity
+	minJitterFrames := 2
+
+	player := otoCtx.NewPlayer(audioBuffer)
+	player.Play()
+	defer player.Close()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			rtp, _, err := track.ReadRTP()
-			if err != nil {
-				if err != io.EOF {
-					logger.Error("reading RTP packet", err)
+		}
+
+		rtp, _, err := track.ReadRTP()
+		if err != nil {
+			if err != io.EOF {
+				logger.Error("reading RTP packet", err)
+			}
+			return
+		}
+		if len(rtp.Payload) == 0 {
+			continue
+		}
+
+		// Decode Opus -> PCM int16
+		n, err := decoder.Decode(rtp.Payload, pcm)
+		if err != nil {
+			logger.Error("decoding Opus", err)
+			continue
+		}
+		if n <= 0 {
+			continue
+		}
+
+		// Convert int16 PCM to little-endian bytes (interleaved)
+		byteCount := n * channels * 2
+		frame := make([]byte, byteCount)
+		for i := 0; i < n*channels; i++ {
+			binary.LittleEndian.PutUint16(frame[i*2:], uint16(pcm[i]))
+		}
+
+		// Jitter accumulation; flush once we have a couple of frames
+		jitter = append(jitter, frame)
+		if len(jitter) >= minJitterFrames {
+			for _, f := range jitter {
+				dropped := audioBuffer.Write(f) // ignore "dropped" flag to avoid log spam
+				if dropped > 0 {
+					logger.Warn("audio buffer overflow; dropping old audio", zap.Int("dropped_bytes", dropped))
 				}
-				return
 			}
-			if len(rtp.Payload) == 0 {
-				logger.Error("empty RTP payload", nil)
-				continue
-			}
-			// Decode Opus to PCM 16-bit
-			n, err := decoder.Decode(rtp.Payload, pcm)
-			if err != nil {
-				logger.Error("decoding Opus", err)
-				continue
-			}
-			pcmSlice := pcm[:n*channels]
-			// Convert stereo int16 to bytes (interleaved: L, R)
-			pcmBytes := make([]byte, len(pcmSlice)*2)
-			for i := 0; i < len(pcmSlice); i++ {
-				binary.LittleEndian.PutUint16(pcmBytes[i*2:], uint16(pcmSlice[i]))
-			}
-			// Write to audioBuffer
-			dropped := audioBuffer.Write(pcmBytes)
-			if dropped {
-				logger.Warn("audio buffer dropped data")
-			}
+			jitter = jitter[:0]
 		}
 	}
 }
