@@ -53,6 +53,7 @@ func (a *CLIAgent) Spawn(
 	logger shared.LoggerAdapter,
 	apiKey string,
 	cfg *realtime.RealtimeSessionCreateRequestParam,
+	language string,
 	printer *shared.Printer,
 	baseUrl ...string,
 ) error {
@@ -79,9 +80,9 @@ func (a *CLIAgent) Spawn(
 	// Creating client
 	var err error
 	if len(baseUrl) > 0 {
-		a.client, err = pkg.NewClient(ctx, a.logger, apiKey, baseUrl[0])
+		a.client, err = pkg.NewClient(ctx, a.logger, apiKey, language, baseUrl[0])
 	} else {
-		a.client, err = pkg.NewClient(ctx, a.logger, apiKey, "")
+		a.client, err = pkg.NewClient(ctx, a.logger, apiKey, language, "")
 	}
 	if err != nil {
 		a.logger.Error("creating client", err)
