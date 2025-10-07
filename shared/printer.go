@@ -58,12 +58,44 @@ func (p *Printer) Write(s string, ind int) (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	indent := strings.Repeat(p.indStr, ind)
+	firstLine := true
 	for line := range strings.SplitSeq(s, "\n") {
-		line = indent + line + "\n"
+		if !firstLine {
+			line = "\n" + indent + line
+		} else {
+			firstLine = false
+			line = indent + line
+		}
 		for _, hook := range p.hooks {
 			if _, err := hook.WriteString(line); err != nil {
 				return fmt.Errorf("on writing to hook: %w", err)
 			}
+		}
+	}
+	return nil
+}
+
+func (p *Printer) Writeln(s string, ind int) (err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	indent := strings.Repeat(p.indStr, ind)
+	firstLine := true
+	for line := range strings.SplitSeq(s, "\n") {
+		if !firstLine {
+			line = "\n" + indent + line
+		} else {
+			firstLine = false
+			line = indent + line
+		}
+		for _, hook := range p.hooks {
+			if _, err := hook.WriteString(line); err != nil {
+				return fmt.Errorf("on writing to hook: %w", err)
+			}
+		}
+	}
+	for _, hook := range p.hooks {
+		if _, err := hook.WriteString("\n"); err != nil {
+			return fmt.Errorf("on writing newline to hook: %w", err)
 		}
 	}
 	return nil

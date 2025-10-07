@@ -1,16 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/bt-bridge/openai-realtime/agents"
 	"github.com/bt-bridge/openai-realtime/shared"
-	"github.com/bytedance/sonic"
-	"github.com/goccy/go-yaml"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/realtime"
 	"go.uber.org/zap"
@@ -34,7 +32,6 @@ const (
 const (
 	agentPrinterFileAddress  string = "cli/cli.output"
 	agentPrinterIndentString string = "│  "
-	agentPrinterIndent       int    = 1
 )
 
 // Session Config (4 October 2025)
@@ -74,77 +71,6 @@ const (
 	sessionOutputVoice     string = "cedar"
 	sessionMaxOutputTokens int64  = 1024
 )
-
-// Realtime Client Config
-const (
-	// Opus Encoded Audio Input
-	realtimeInputChannels int = 1     // mono
-	realtimeInputRate     int = 48000 // 48 kHz
-	realtimeInputFrameMs  int = 20    // 20 ms
-)
-
-func loadSessionConfig(logger shared.LoggerAdapter) *realtime.RealtimeSessionCreateRequestParam {
-	cfg := realtime.RealtimeSessionCreateRequestParam{
-		Instructions: param.NewOpt(sessionInstructions),
-		Model:        sessionModel,
-		Audio: realtime.RealtimeAudioConfigParam{
-			Input: realtime.RealtimeAudioConfigInputParam{
-				TurnDetection: realtime.RealtimeAudioInputTurnDetectionUnionParam{
-					OfSemanticVad: &realtime.RealtimeAudioInputTurnDetectionSemanticVadParam{
-						CreateResponse:    param.NewOpt(true),
-						InterruptResponse: param.NewOpt(true),
-						Eagerness:         sessionVADEagerness,
-					},
-				},
-				Format: realtime.RealtimeAudioFormatsUnionParam{
-					OfAudioPCM: &realtime.RealtimeAudioFormatsAudioPCMParam{
-						Rate: 24000,
-						Type: "audio/pcm",
-					},
-				},
-				NoiseReduction: realtime.RealtimeAudioConfigInputNoiseReductionParam{
-					Type: realtime.NoiseReductionType(sessionNoiseReduction),
-				},
-				Transcription: realtime.AudioTranscriptionParam{
-					Language: param.NewOpt(sessionInputLanguage),
-					Prompt:   param.NewOpt(sessionInputTranscriptionPrompt),
-					Model:    realtime.AudioTranscriptionModel(sessionInputTranscriptionModel),
-				},
-			},
-			Output: realtime.RealtimeAudioConfigOutputParam{
-				Speed: param.NewOpt(sessionOutputSpeed),
-				Format: realtime.RealtimeAudioFormatsUnionParam{
-					OfAudioPCM: &realtime.RealtimeAudioFormatsAudioPCMParam{
-						Rate: 24000,
-						Type: "audio/pcm",
-					},
-				},
-				Voice: realtime.RealtimeAudioConfigOutputVoice(sessionOutputVoice),
-			},
-		},
-		MaxOutputTokens: realtime.RealtimeSessionCreateRequestMaxOutputTokensUnionParam{
-			OfInt: param.NewOpt(sessionMaxOutputTokens),
-		},
-	}
-	bytes, err := cfg.MarshalJSON()
-	if err != nil {
-		logger.Error("failed to marshal session config", err)
-		os.Exit(1)
-	}
-	var cfgMap map[string]any
-	if err = sonic.Unmarshal(bytes, &cfgMap); err != nil {
-		logger.Error("failed to re-unmarshal session config", err)
-		os.Exit(1)
-	}
-	yamlBytes, err := yaml.Marshal(cfgMap)
-	if err != nil {
-		logger.Error("failed to marshal session config to yaml", err)
-		os.Exit(1)
-	}
-	fmt.Println("📋 Session Config")
-	fmt.Println("\n├─  " + strings.ReplaceAll(string(yamlBytes), "\n", "\n│   ") + "\n")
-	return &cfg
-}
 
 func main() {
 	// Initialize logger
@@ -251,8 +177,10 @@ func main() {
 	}
 
 	// Spawning CLI Agent
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	agent := new(agents.CLIAgent)
-	doneSignal, err := agent.Spawn(logger, apiKey, session, printer, baseUrl)
+	doneSignal, err := agent.Spawn(ctx, logger, apiKey, session, printer, baseUrl)
 	if err != nil {
 		logger.Error("spawning CLI agent", err)
 		os.Exit(1)

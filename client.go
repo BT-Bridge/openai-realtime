@@ -2,13 +2,13 @@ package realtime
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/textproto"
 	"net/url"
 	"sync"
-	"time"
 
 	"github.com/bt-bridge/openai-realtime/shared"
 	"github.com/openai/openai-go/v3/realtime"
@@ -21,6 +21,17 @@ type TrackRemoteHandler func(track *webrtc.TrackRemote)
 type TrackLocalHandler func(track *webrtc.TrackLocalStaticSample)
 
 type EventHandler func(event *Event)
+
+type ClientState int
+
+const (
+	ClientStateNew ClientState = iota
+	ClientStateConnecting
+	ClientStateConnected
+	ClientStateDisconnected
+	ClientStateFailed
+	ClientStateClosed
+)
 
 type Client struct {
 	logger  shared.LoggerAdapter
@@ -37,9 +48,50 @@ type Client struct {
 	audioTLH TrackLocalHandler  // track.Kind() == webrtc.RTPCodecTypeAudio
 	audioTRH TrackRemoteHandler // track.Kind() == webrtc.RTPCodecTypeAudio
 	eh       EventHandler
+
+	state     webrtc.PeerConnectionState
+	connected <-chan struct{}
+
+	ctx    context.Context
+	cancel context.CancelCauseFunc
 }
 
-func NewClient(logger shared.LoggerAdapter, apikey string, baseUrl string) (c *Client, err error) {
+func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.respectCtx(); err != nil {
+		return fmt.Errorf("respecting client context: %w", err)
+	}
+	if c.pc != nil {
+		if err := c.pc.Close(); err != nil {
+			c.logger.Error("closing peer connection failed", err)
+		}
+		c.pc = nil
+	}
+	if c.cancel != nil {
+		c.cancel(errors.New("client closed"))
+		c.cancel = nil
+	}
+	c.running = false
+	return nil
+}
+
+func (c *Client) Done() <-chan struct{} {
+	return c.ctx.Done()
+}
+
+func (c *Client) Connected() <-chan struct{} {
+	return c.connected
+}
+
+func (c *Client) State() webrtc.PeerConnectionState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.state
+}
+
+func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, baseUrl string) (c *Client, err error) {
+	ctx, cancel := context.WithCancelCause(ctx)
 	if logger == nil {
 		return nil, shared.ErrNoLogger
 	}
@@ -70,12 +122,81 @@ func NewClient(logger shared.LoggerAdapter, apikey string, baseUrl string) (c *C
 	if err != nil {
 		return nil, fmt.Errorf("creating peer connection: %w", err)
 	}
+	connected := make(chan struct{})
+	connectedGotClosed := false
+	c.connected = connected
 
+	// Setting up Connection State Change handler
+	c.pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if err := c.respectCtx(); err != nil {
+			c.logger.Warn("respecting client context failed", zap.Error(err))
+			return
+		}
+		c.logger.Trace(
+			"peer connection state changed",
+			zap.String("prev", c.state.String()),
+			zap.String("new", state.String()),
+		)
+		if c.state > state {
+			c.logger.Warn(
+				"peer connection state changed to unexpected state",
+				zap.String("prev", c.state.String()),
+				zap.String("new", state.String()),
+			)
+		}
+		c.state = state
+		switch c.state {
+		case webrtc.PeerConnectionStateConnected:
+			if !connectedGotClosed {
+				connectedGotClosed = true
+				close(connected)
+				return
+			}
+			c.logger.Warn("peer connection state is connected (More than once)")
+		case webrtc.PeerConnectionStateDisconnected:
+			if !connectedGotClosed {
+				connectedGotClosed = true
+				close(connected)
+			}
+			c.cancel(errors.New("peer connection state is disconnected"))
+		case webrtc.PeerConnectionStateFailed:
+			if !connectedGotClosed {
+				connectedGotClosed = true
+				close(connected)
+			}
+			c.cancel(errors.New("peer connection state is failed"))
+		case webrtc.PeerConnectionStateClosed:
+			if !connectedGotClosed {
+				connectedGotClosed = true
+				close(connected)
+			}
+			c.cancel(errors.New("peer connection state is closed"))
+		}
+	})
+
+	// Creating data channel
 	c.dc, err = c.pc.CreateDataChannel("oai", nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating data channel: %w", err)
 	}
+
+	c.ctx = ctx
+	c.cancel = cancel
+	if err := c.respectCtx(); err != nil {
+		return nil, fmt.Errorf("respecting client context: %w", err)
+	}
 	return
+}
+
+func (c *Client) respectCtx() error {
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	default:
+	}
+	return nil
 }
 
 func (c *Client) SetConfig(cfg *realtime.RealtimeSessionCreateRequestParam) error {
@@ -210,46 +331,27 @@ func (c *Client) Start() error {
 
 	offer, err := c.pc.CreateOffer(nil)
 	if err != nil {
+		c.cancel(fmt.Errorf("creating offer: %w", err))
 		return fmt.Errorf("creating offer: %w", err)
 	}
 	if err = c.pc.SetLocalDescription(offer); err != nil {
+		c.cancel(fmt.Errorf("setting local description: %w", err))
 		return fmt.Errorf("setting local description: %w", err)
+	}
+	if err := c.respectCtx(); err != nil {
+		return fmt.Errorf("respecting client context: %w", err)
 	}
 	answerOffer, err := c.createSession(offer.SDP)
 	if err != nil {
+		c.cancel(fmt.Errorf("creating session: %w", err))
 		return fmt.Errorf("creating session: %w", err)
 	}
 	if err := c.pc.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeAnswer,
 		SDP:  answerOffer,
 	}); err != nil {
+		c.cancel(fmt.Errorf("setting remote description: %w", err))
 		return err
-	}
-	connected := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			<-ticker.C
-			if c.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
-				close(connected)
-				return
-			}
-			if c.pc.ConnectionState() == webrtc.PeerConnectionStateFailed {
-				c.logger.Error("error on connection to OpenAI", errors.New("peer connection state is failed"))
-				return
-			}
-			if c.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
-				c.logger.Error("error on connection to OpenAI", errors.New("peer connection state is closed"))
-				return
-			}
-		}
-	}()
-	select {
-	case <-connected:
-		c.logger.Info("peer connection state is connected")
-	case <-time.After(10 * time.Second):
-		return errors.New("timeout waiting for peer connection to be connected")
 	}
 	return nil
 }
@@ -301,8 +403,18 @@ func (c *Client) createSession(offer string) (answerOffer string, err error) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.SetBody(body.Bytes())
 
-	if err = fasthttp.Do(req, resp); err != nil {
-		return "", fmt.Errorf("performing HTTP request: %w", err)
+	errC := make(chan error)
+	go func() {
+		defer close(errC)
+		errC <- fasthttp.Do(req, resp)
+	}()
+	select {
+	case <-c.ctx.Done():
+		return "", c.ctx.Err()
+	case err := <-errC:
+		if err != nil {
+			return "", fmt.Errorf("performing HTTP request: %w", err)
+		}
 	}
 	if resp.StatusCode() != fasthttp.StatusCreated {
 		return "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode(), string(resp.Body()))
