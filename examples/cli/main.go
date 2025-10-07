@@ -28,6 +28,13 @@ const (
 	logFileCompress   bool   = false        // no compression
 )
 
+// Greeting message
+const greeting string = `
+Introduce yourself as user's business coach (بیزینس کوچ).
+Say you are glad to assist in today's session.
+Speak in Persian.
+`
+
 // Agent configuration
 const (
 	agentPrinterIndentString string = "│  "
@@ -50,7 +57,6 @@ const (
 	// The language of the input audio. Supplying the input language in
 	// [ISO-639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) (e.g. `en`)
 	sessionInputLanguage            string = "fa"
-	sessionInputLanguageFull            string = "farsi"
 	sessionInputTranscriptionPrompt string = "expect words related to web technologies"
 	// whisper-1
 	// / gpt-4o-transcribe-latest
@@ -68,7 +74,7 @@ const (
 	// / verse
 	// / marin
 	// / cedar
-	sessionOutputVoice     string = "marin"
+	sessionOutputVoice     string = "echo"
 	sessionMaxOutputTokens int64  = 1024
 )
 
@@ -174,7 +180,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	agent := new(agents.CLIAgent)
-	err = agent.Spawn(ctx, logger, apiKey, session, sessionInputLanguageFull, printer, baseUrl)
+	err = agent.Spawn(ctx, logger, apiKey, session, greeting, printer, baseUrl)
 	if err != nil {
 		logger.Error("spawning CLI agent", err)
 		os.Exit(1)

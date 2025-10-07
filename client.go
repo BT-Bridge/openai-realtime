@@ -39,7 +39,7 @@ type Client struct {
 	baseUrl *url.URL
 	apiKey  string
 	cfg     *realtime.RealtimeSessionCreateRequestParam
-	language string
+	greeting string
 
 	mu      sync.Mutex
 	pc      *webrtc.PeerConnection
@@ -98,7 +98,7 @@ func (c *Client) State() webrtc.PeerConnectionState {
 	return c.state
 }
 
-func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, language, baseUrl string) (c *Client, err error) {
+func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, greeting, baseUrl string) (c *Client, err error) {
 	if logger == nil {
 		return nil, shared.ErrNoLogger
 	}
@@ -123,7 +123,7 @@ func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, languag
 		logger:  logger,
 		baseUrl: baseUrl_,
 		apiKey:  apikey,
-		language: language,
+		greeting: greeting,
 		ctx:     ctx,
 		cancel:  cancel,
 	}
@@ -290,12 +290,10 @@ func (c *Client) RegisterEventHandler(handler EventHandler) error {
 	}
 	c.eh = handler
 	c.dc.OnOpen(func() {
-		fmt.Println("Data channel opened")
 		startMessage := map[string]any{
 			"type": "response.create",
 			"response": map[string]any{
-				"instructions":      "Greet the user and introduce yourself as a Bussiness coach AI in "+c.language+".\nSay you are glad to assist them in resolving their business problems.",
-				"max_output_tokens": 300,
+				"instructions":      c.greeting,
 			},
 		}
 		smb, err := sonic.Marshal(startMessage)
