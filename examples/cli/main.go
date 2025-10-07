@@ -173,7 +173,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	agent := new(agents.CLIAgent)
-	doneSignal, err := agent.Spawn(ctx, logger, apiKey, session, printer, baseUrl)
+	err = agent.Spawn(ctx, logger, apiKey, session, printer, baseUrl)
 	if err != nil {
 		logger.Error("spawning CLI agent", err)
 		os.Exit(1)
@@ -184,7 +184,7 @@ func main() {
 	defer close(sig)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	select {
-	case <-doneSignal:
+	case <-agent.Done():
 		logger.Info("session ended")
 		return
 	case <-sig:
@@ -194,7 +194,7 @@ func main() {
 			os.Exit(1)
 		}
 		select {
-		case <-doneSignal:
+		case <-agent.Done():
 			logger.Info("graceful shutdown complete")
 			return
 		case <-sig:
