@@ -159,7 +159,7 @@ func (a *CLIAgent) Spawn(
 			zap.String("kind", track.Kind().String()),
 			zap.String("codec", track.Codec().MimeType),
 		)
-		tools.PlayRemoteAudio(ctx, a.logger, track, 100)
+		tools.PlayRemoteAudio(ctx, a.logger, track, 200, 10)
 	})
 	if err != nil {
 		a.logger.Error("registering track remote handler", err)
