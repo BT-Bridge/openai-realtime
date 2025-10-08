@@ -242,8 +242,12 @@ func (a *CLIAgent) Close() error {
 	return nil
 }
 
-func (a *CLIAgent) eventHandler(event *pkg.Event) {
+func (a *CLIAgent) eventHandler(event *pkg.ServerEvent) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.logger.Info("received event", zap.String("type", string(event.Type)))
+	a.logger.Info(
+		"received event", 
+		zap.String("type", string(event.Type)), 
+		zap.String("event_id", event.EventId),
+	)
 }

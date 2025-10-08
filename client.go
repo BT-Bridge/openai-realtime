@@ -21,7 +21,7 @@ import (
 type TrackRemoteHandler func(track *webrtc.TrackRemote)
 type TrackLocalHandler func(track *webrtc.TrackLocalStaticSample)
 
-type EventHandler func(event *Event)
+type EventHandler func(event *ServerEvent)
 
 type ClientState int
 
@@ -312,7 +312,7 @@ func (c *Client) RegisterEventHandler(handler EventHandler) error {
 			c.logger.Warn("received non-string message on data channel")
 			return
 		}
-		event := new(Event)
+		event := new(ServerEvent)
 		if err := event.UnmarshalJSON(msg.Data); err != nil {
 			c.logger.Error(
 				"can not unmarshal event",
