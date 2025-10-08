@@ -6,7 +6,6 @@ cli:
 playground:
 	@$(MAKE) -C examples cmd EXAMPLE=playground
 
-
 .PHONY: clean
 clean:
 	@rm -f bin/*
