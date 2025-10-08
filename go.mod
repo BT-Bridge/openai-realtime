@@ -1,4 +1,4 @@
-module github.com/bt-bridge/openai-realtime
+module github.com/bridge-packages/go-openai-realtime
 
 go 1.25.1
 

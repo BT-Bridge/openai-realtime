@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bt-bridge/openai-realtime/shared"
+	"github.com/bridge-packages/go-openai-realtime/shared"
 	"github.com/ebitengine/oto/v3"
 	"github.com/hraban/opus"
 	"github.com/pion/mediadevices"

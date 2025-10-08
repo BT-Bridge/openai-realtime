@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/bt-bridge/openai-realtime/agents"
-	"github.com/bt-bridge/openai-realtime/shared"
+	"github.com/bridge-packages/go-openai-realtime/agents"
+	"github.com/bridge-packages/go-openai-realtime/shared"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/realtime"
 	"go.uber.org/zap"

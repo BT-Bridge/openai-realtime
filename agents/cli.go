@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	pkg "github.com/bt-bridge/openai-realtime"
-	"github.com/bt-bridge/openai-realtime/shared"
-	"github.com/bt-bridge/openai-realtime/tools"
+	pkg "github.com/bridge-packages/go-openai-realtime"
+	"github.com/bridge-packages/go-openai-realtime/shared"
+	"github.com/bridge-packages/go-openai-realtime/tools"
 	"github.com/goccy/go-yaml"
 	"github.com/openai/openai-go/v3/realtime"
 	"github.com/pion/mediadevices"
@@ -413,7 +413,7 @@ type CLIState struct {
 	mu         sync.Mutex
 	userTrans  string
 	coachTrans string
-	turn 	   int // 0 for assistant, 1 for user
+	turn       int // 0 for assistant, 1 for user
 }
 
 func NewCLIState() *CLIState {
@@ -470,8 +470,7 @@ func (s *CLIState) PipeEvent(event *pkg.ServerEvent) (resp string) {
 		}
 	}
 	return resp
-}	
-
+}
 
 func (a *CLIAgent) printEventHelper(title string, event *pkg.ServerEvent) {
 	if err := a.printer.Writeln(title, 0); err != nil {

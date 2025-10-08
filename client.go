@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/bt-bridge/openai-realtime/shared"
+	"github.com/bridge-packages/go-openai-realtime/shared"
 	"github.com/bytedance/sonic"
 	"github.com/openai/openai-go/v3/realtime"
 	"github.com/pion/webrtc/v4"
@@ -35,10 +35,10 @@ const (
 )
 
 type Client struct {
-	logger  shared.LoggerAdapter
-	baseUrl *url.URL
-	apiKey  string
-	cfg     *realtime.RealtimeSessionCreateRequestParam
+	logger   shared.LoggerAdapter
+	baseUrl  *url.URL
+	apiKey   string
+	cfg      *realtime.RealtimeSessionCreateRequestParam
 	greeting string
 
 	mu      sync.Mutex
@@ -120,12 +120,12 @@ func NewClient(ctx context.Context, logger shared.LoggerAdapter, apikey, greetin
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	c = &Client{
-		logger:  logger,
-		baseUrl: baseUrl_,
-		apiKey:  apikey,
+		logger:   logger,
+		baseUrl:  baseUrl_,
+		apiKey:   apikey,
 		greeting: greeting,
-		ctx:     ctx,
-		cancel:  cancel,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 
 	// Creating a new WebRTC API object
@@ -293,7 +293,7 @@ func (c *Client) RegisterEventHandler(handler EventHandler) error {
 		startMessage := map[string]any{
 			"type": "response.create",
 			"response": map[string]any{
-				"instructions":      c.greeting,
+				"instructions": c.greeting,
 			},
 		}
 		smb, err := sonic.Marshal(startMessage)
