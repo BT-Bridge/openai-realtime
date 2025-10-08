@@ -108,11 +108,135 @@ func (e *ServerEvent) IsClientEvent() bool {
 }
 
 func (e *ServerEvent) MarshalYAML() ([]byte, error) {
-	return yaml.MarshalWithOptions(e, yaml.UseJSONMarshaler())
+	if e.EventId == "" {
+		return nil, errors.New("EventId is empty")
+	}
+	if e.Type == "" {
+		return nil, errors.New("Type is empty")
+	}
+	if e.Param == nil {
+		return nil, errors.New("Param is nil")
+	}
+	resp := map[string]any{}
+	for k, v := range e.Param.Json() {
+		resp[k] = v
+	}
+	resp["event_id"] = e.EventId
+	resp["type"] = e.Type
+	return yaml.MarshalWithOptions(resp, yaml.UseJSONMarshaler())
 }
 
 func (e *ServerEvent) UnmarshalYAML(data []byte) error {
-	return yaml.UnmarshalWithOptions(data, e, yaml.UseJSONUnmarshaler())
+	var raw map[string]any
+	if err := yaml.UnmarshalWithOptions(data, &raw, yaml.UseJSONUnmarshaler()); err != nil {
+		return err
+	}
+	if v, ok := raw["event_id"].(string); ok {
+		e.EventId = v
+		delete(raw, "event_id")
+	} else {
+		return errors.New("missing event_id")
+	}
+	if v, ok := raw["type"].(string); ok {
+		e.Type = ServerEventType(v)
+		delete(raw, "type")
+	} else {
+		return errors.New("missing type")
+	}
+	if len(raw) == 0 {
+		return errors.New("missing param")
+	}
+	switch e.Type {
+	case ServerEventTypeError:
+		e.Param = new(ServerEventParamError)
+	case ServerEventTypeSessionCreated:
+		e.Param = new(ServerEventParamSessionCreated)
+	case ServerEventTypeSessionUpdated:
+		e.Param = new(ServerEventParamSessionUpdated)
+	case ServerEventTypeConversationItemAdded:
+		e.Param = new(ServerEventParamConversationItemAdded)
+	case ServerEventTypeConversationItemDone:
+		e.Param = new(ServerEventParamConversationItemDone)
+	case ServerEventTypeConversationItemRetrieved:
+		e.Param = new(ServerEventParamConversationItemRetrieved)
+	case ServerEventTypeConversationItemInputAudioTranscriptionCompleted:
+		e.Param = new(ServerEventParamConversationItemInputAudioTranscriptionCompleted)
+	case ServerEventTypeConversationItemInputAudioTranscriptionDelta:
+		e.Param = new(ServerEventParamConversationItemInputAudioTranscriptionDelta)
+	case ServerEventTypeConversationItemInputAudioTranscriptionSegment:
+		e.Param = new(ServerEventParamConversationItemInputAudioTranscriptionSegment)
+	case ServerEventTypeConversationItemInputAudioTranscriptionFailed:
+		e.Param = new(ServerEventParamConversationItemInputAudioTranscriptionFailed)
+	case ServerEventTypeConversationItemTruncated:
+		e.Param = new(ServerEventParamConversationItemTruncated)
+	case ServerEventTypeConversationItemDeleted:
+		e.Param = new(ServerEventParamConversationItemDeleted)
+	case ServerEventTypeInputAudioBufferCommitted:
+		e.Param = new(ServerEventParamInputAudioBufferCommitted)
+	case ServerEventTypeInputAudioBufferCleared:
+		e.Param = new(ServerEventParamInputAudioBufferCleared)
+	case ServerEventTypeInputAudioBufferSpeechStarted:
+		e.Param = new(ServerEventParamInputAudioBufferSpeechStarted)
+	case ServerEventTypeInputAudioBufferSpeechStopped:
+		e.Param = new(ServerEventParamInputAudioBufferSpeechStopped)
+	case ServerEventTypeInputAudioBufferTimeoutTriggered:
+		e.Param = new(ServerEventParamInputAudioBufferTimeoutTriggered)
+	case ServerEventTypeOutputAudioBufferStarted:
+		e.Param = new(ServerEventParamOutputAudioBufferStarted)
+	case ServerEventTypeOutputAudioBufferStopped:
+		e.Param = new(ServerEventParamOutputAudioBufferStopped)
+	case ServerEventTypeOutputAudioBufferCleared:
+		e.Param = new(ServerEventParamOutputAudioBufferCleared)
+	case ServerEventTypeResponseCreated:
+		e.Param = new(ServerEventParamResponseCreated)
+	case ServerEventTypeResponseDone:
+		e.Param = new(ServerEventParamResponseDone)
+	case ServerEventTypeResponseOutputItemAdded:
+		e.Param = new(ServerEventParamResponseOutputItemAdded)
+	case ServerEventTypeResponseOutputItemDone:
+		e.Param = new(ServerEventParamResponseOutputItemDone)
+	case ServerEventTypeResponseContentPartAdded:
+		e.Param = new(ServerEventParamResponseContentPartAdded)
+	case ServerEventTypeResponseContentPartDone:
+		e.Param = new(ServerEventParamResponseContentPartDone)
+	case ServerEventTypeResponseOutputTextDelta:
+		e.Param = new(ServerEventParamResponseOutputTextDelta)
+	case ServerEventTypeResponseOutputTextDone:
+		e.Param = new(ServerEventParamResponseOutputTextDone)
+	case ServerEventTypeResponseOutputAudioTranscriptDelta:
+		e.Param = new(ServerEventParamResponseOutputAudioTranscriptDelta)
+	case ServerEventTypeResponseOutputAudioTranscriptDone:
+		e.Param = new(ServerEventParamResponseOutputAudioTranscriptDone)
+	case ServerEventTypeResponseOutputAudioDelta:
+		e.Param = new(ServerEventParamResponseOutputAudioDelta)
+	case ServerEventTypeResponseOutputAudioDone:
+		e.Param = new(ServerEventParamResponseOutputAudioDone)
+	case ServerEventTypeResponseFunctionCallArgumentsDelta:
+		e.Param = new(ServerEventParamResponseFunctionCallArgumentsDelta)
+	case ServerEventTypeResponseFunctionCallArgumentsDone:
+		e.Param = new(ServerEventParamResponseFunctionCallArgumentsDone)
+	case ServerEventTypeResponseMCPCallArgumentsDelta:
+		e.Param = new(ServerEventParamResponseMCPCallArgumentsDelta)
+	case ServerEventTypeResponseMCPCallArgumentsDone:
+		e.Param = new(ServerEventParamResponseMCPCallArgumentsDone)
+	case ServerEventTypeResponseMCPCallInProgress:
+		e.Param = new(ServerEventParamResponseMCPCallInProgress)
+	case ServerEventTypeResponseMCPCallCompleted:
+		e.Param = new(ServerEventParamResponseMCPCallCompleted)
+	case ServerEventTypeResponseMCPCallFailed:
+		e.Param = new(ServerEventParamResponseMCPCallFailed)
+	case ServerEventTypeMCPListToolsInProgress:
+		e.Param = new(ServerEventParamMCPListToolsInProgress)
+	case ServerEventTypeMCPListToolsCompleted:
+		e.Param = new(ServerEventParamMCPListToolsCompleted)
+	case ServerEventTypeMCPListToolsFailed:
+		e.Param = new(ServerEventParamMCPListToolsFailed)
+	case ServerEventTypeRatelimitsUpdated:
+		e.Param = new(ServerEventParamRatelimitsUpdated)
+	default:
+		return fmt.Errorf("unknown event type: %s", e.Type)
+	}
+	return e.Param.New(raw)
 }
 
 func (e *ServerEvent) MarshalJSON() ([]byte, error) {

@@ -19,16 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type CLIState struct {
-	micOpened bool
-}
-
-func NewCLIState() *CLIState {
-	return &CLIState{
-		micOpened: false,
-	}
-}
-
 type CLIAgent struct {
 	logger   shared.LoggerAdapter
 	printer  *shared.Printer
@@ -246,8 +236,264 @@ func (a *CLIAgent) eventHandler(event *pkg.ServerEvent) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.logger.Info(
-		"received event", 
-		zap.String("type", string(event.Type)), 
+		"received event",
+		zap.String("type", string(event.Type)),
 		zap.String("event_id", event.EventId),
 	)
+	msg := a.state.PipeEvent(event)
+	if msg != "" {
+		a.printHelper(msg, 0)
+	}
+	switch event.Type {
+	case pkg.ServerEventTypeError:
+		a.logger.Error(
+			"error event received",
+			nil,
+			zap.Any("error", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+		a.printEventHelper("❌ Error Event Received", event)
+	case pkg.ServerEventTypeSessionCreated:
+		a.printEventHelper("✅ Session Created", nil)
+	case pkg.ServerEventTypeSessionUpdated:
+		a.printEventHelper("ℹ️ Session Updated", nil)
+	case pkg.ServerEventTypeConversationItemAdded:
+		a.logger.Info(
+			"conversation item added",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemDone:
+		a.logger.Info(
+			"conversation item done",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemRetrieved:
+		a.logger.Info(
+			"conversation item retrieved",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemInputAudioTranscriptionCompleted:
+		a.logger.Info(
+			"conversation item input audio transcription completed",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemInputAudioTranscriptionDelta:
+		a.logger.Info(
+			"conversation item input audio transcription delta",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemInputAudioTranscriptionSegment:
+		a.logger.Info(
+			"conversation item input audio transcription segment",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemInputAudioTranscriptionFailed:
+		a.logger.Info(
+			"conversation item input audio transcription failed",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+		a.printEventHelper("❌ Input Audio Transcription Failed", event)
+	case pkg.ServerEventTypeConversationItemTruncated:
+		a.logger.Info(
+			"conversation item truncated",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeConversationItemDeleted:
+		a.logger.Info(
+			"conversation item deleted",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeInputAudioBufferCommitted:
+		a.logger.Info(
+			"input audio buffer committed",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeInputAudioBufferCleared:
+		a.logger.Info(
+			"input audio buffer cleared",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeInputAudioBufferSpeechStarted:
+		a.logger.Info(
+			"input audio buffer speech started",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeInputAudioBufferSpeechStopped:
+		a.logger.Info(
+			"input audio buffer speech stopped",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeInputAudioBufferTimeoutTriggered:
+		a.logger.Warn(
+			"input audio buffer timeout triggered",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeOutputAudioBufferStarted:
+		a.logger.Info(
+			"output audio buffer started",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeOutputAudioBufferStopped:
+		a.logger.Info(
+			"output audio buffer stopped",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeOutputAudioBufferCleared:
+		a.logger.Info(
+			"output audio buffer cleared",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeResponseCreated:
+		a.logger.Info(
+			"response created",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeResponseDone:
+	case pkg.ServerEventTypeResponseOutputItemAdded:
+	case pkg.ServerEventTypeResponseOutputItemDone:
+	case pkg.ServerEventTypeResponseContentPartAdded:
+	case pkg.ServerEventTypeResponseContentPartDone:
+	case pkg.ServerEventTypeResponseOutputTextDelta:
+	case pkg.ServerEventTypeResponseOutputTextDone:
+	case pkg.ServerEventTypeResponseOutputAudioTranscriptDelta:
+		a.logger.Info(
+			"response output audio transcript delta",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeResponseOutputAudioTranscriptDone:
+		a.logger.Info(
+			"response output audio transcript done",
+			zap.Any("item", event.Param),
+			zap.String("event_id", event.EventId),
+		)
+	case pkg.ServerEventTypeResponseOutputAudioDelta:
+	case pkg.ServerEventTypeResponseOutputAudioDone:
+	case pkg.ServerEventTypeResponseFunctionCallArgumentsDelta:
+	case pkg.ServerEventTypeResponseFunctionCallArgumentsDone:
+	case pkg.ServerEventTypeResponseMCPCallArgumentsDelta:
+	case pkg.ServerEventTypeResponseMCPCallArgumentsDone:
+	case pkg.ServerEventTypeResponseMCPCallInProgress:
+	case pkg.ServerEventTypeResponseMCPCallCompleted:
+	case pkg.ServerEventTypeResponseMCPCallFailed:
+	case pkg.ServerEventTypeMCPListToolsInProgress:
+	case pkg.ServerEventTypeMCPListToolsCompleted:
+	case pkg.ServerEventTypeMCPListToolsFailed:
+	case pkg.ServerEventTypeRatelimitsUpdated:
+	default:
+		a.logger.Warn(
+			"unknown event type received",
+			zap.String("type", string(event.Type)),
+			zap.String("event_id", event.EventId),
+			zap.Any("event", event.Param),
+		)
+	}
+
+}
+
+type CLIState struct {
+	mu         sync.Mutex
+	userTrans  string
+	coachTrans string
+	turn 	   int // 0 for assistant, 1 for user
+}
+
+func NewCLIState() *CLIState {
+	return &CLIState{
+		userTrans:  "🗣️ User  - ",
+		coachTrans: "🧑 Coach - ",
+		turn:       0,
+	}
+}
+
+func (s *CLIState) PipeEvent(event *pkg.ServerEvent) (resp string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch event.Type {
+	case pkg.ServerEventTypeConversationItemInputAudioTranscriptionDelta:
+		delta := event.Param.(*pkg.ServerEventParamConversationItemInputAudioTranscriptionDelta).Delta
+		if s.turn == 1 {
+			if s.userTrans == "" {
+				resp = delta
+			} else {
+				resp = s.userTrans + delta
+				s.userTrans = ""
+			}
+		} else {
+			s.userTrans += delta
+		}
+	case pkg.ServerEventTypeResponseOutputAudioTranscriptDelta:
+		delta := event.Param.(*pkg.ServerEventParamResponseOutputAudioTranscriptDelta).Delta
+		if s.turn == 0 {
+			if s.coachTrans == "" {
+				resp = delta
+			} else {
+				resp = s.coachTrans + delta
+				s.coachTrans = ""
+			}
+		} else {
+			s.coachTrans += delta
+		}
+	case pkg.ServerEventTypeConversationItemInputAudioTranscriptionCompleted:
+		if s.turn == 1 {
+			resp = s.userTrans + "\n\n"
+			s.userTrans = "🗣️ User  - "
+			s.turn = 0
+		} else {
+			s.userTrans = "🗣️ User  - "
+		}
+	case pkg.ServerEventTypeResponseOutputAudioTranscriptDone:
+		if s.turn == 0 {
+			resp = s.coachTrans + "\n\n"
+			s.coachTrans = "🧑 Coach - "
+			s.turn = 1
+		} else {
+			s.coachTrans = "🧑 Coach - "
+		}
+	}
+	return resp
+}	
+
+
+func (a *CLIAgent) printEventHelper(title string, event *pkg.ServerEvent) {
+	if err := a.printer.Writeln(title, 0); err != nil {
+		a.logger.Error("printing event title", err)
+	}
+	if event != nil {
+		yamlBytes, err := event.MarshalYAML()
+		if err != nil {
+			a.logger.Error("marshaling event to yaml", err)
+			return
+		}
+		if err := a.printer.Write(string(yamlBytes), 1); err != nil {
+			a.logger.Error("printing event", err)
+		}
+	}
+	if err := a.printer.Writeln("", 0); err != nil {
+		a.logger.Error("printing newline after event", err)
+	}
+}
+
+func (a *CLIAgent) printHelper(s string, indent int) {
+	if err := a.printer.Write(s, indent); err != nil {
+		a.logger.Error("printing", err)
+	}
 }

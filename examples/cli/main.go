@@ -63,7 +63,7 @@ const (
 	// / gpt-4o-mini-transcribe
 	// / gpt-4o-transcribe
 	sessionInputTranscriptionModel string  = "whisper-1"
-	sessionOutputSpeed             float64 = 0.9
+	sessionOutputSpeed             float64 = 1.1
 	// alloy
 	// / ash
 	// / ballad
@@ -74,7 +74,7 @@ const (
 	// / verse
 	// / marin
 	// / cedar
-	sessionOutputVoice     string = "echo"
+	sessionOutputVoice     string = "ash"
 	sessionMaxOutputTokens int64  = 1024
 )
 
