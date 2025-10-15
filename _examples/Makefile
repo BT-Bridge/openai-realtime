@@ -2,7 +2,7 @@ EXAMPLE := playground
 EXAMPLES = cli
 
 ifeq (,$(filter $(EXAMPLE),$(EXAMPLES) playground))
-$(error example '$(EXAMPLE)' not found in examples)
+$(error example '$(EXAMPLE)' not found in _examples)
 endif
 ifeq ($(EXAMPLE),playground)
 ifeq ($(wildcard playground/),)
